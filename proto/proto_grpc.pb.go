@@ -18,86 +18,123 @@ import (
 // Requires gRPC-Go v1.32.0 or later.
 const _ = grpc.SupportPackageIsVersion7
 
-// ExampleServiceClient is the client API for ExampleService service.
+// MutualExclusionServiceClient is the client API for MutualExclusionService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type ExampleServiceClient interface {
-	ExampleMethod(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*Response, error)
+type MutualExclusionServiceClient interface {
+	Election(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*ElectionResult, error)
+	SetCoordinator(ctx context.Context, in *ElectionResult, opts ...grpc.CallOption) (*EmptyMessage, error)
 }
 
-type exampleServiceClient struct {
+type mutualExclusionServiceClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewExampleServiceClient(cc grpc.ClientConnInterface) ExampleServiceClient {
-	return &exampleServiceClient{cc}
+func NewMutualExclusionServiceClient(cc grpc.ClientConnInterface) MutualExclusionServiceClient {
+	return &mutualExclusionServiceClient{cc}
 }
 
-func (c *exampleServiceClient) ExampleMethod(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*Response, error) {
-	out := new(Response)
-	err := c.cc.Invoke(ctx, "/grpcExample.ExampleService/ExampleMethod", in, out, opts...)
+func (c *mutualExclusionServiceClient) Election(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*ElectionResult, error) {
+	out := new(ElectionResult)
+	err := c.cc.Invoke(ctx, "/grpcexample.MutualExclusionService/Election", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// ExampleServiceServer is the server API for ExampleService service.
-// All implementations must embed UnimplementedExampleServiceServer
+func (c *mutualExclusionServiceClient) SetCoordinator(ctx context.Context, in *ElectionResult, opts ...grpc.CallOption) (*EmptyMessage, error) {
+	out := new(EmptyMessage)
+	err := c.cc.Invoke(ctx, "/grpcexample.MutualExclusionService/SetCoordinator", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// MutualExclusionServiceServer is the server API for MutualExclusionService service.
+// All implementations must embed UnimplementedMutualExclusionServiceServer
 // for forward compatibility
-type ExampleServiceServer interface {
-	ExampleMethod(context.Context, *EmptyRequest) (*Response, error)
-	mustEmbedUnimplementedExampleServiceServer()
+type MutualExclusionServiceServer interface {
+	Election(context.Context, *EmptyMessage) (*ElectionResult, error)
+	SetCoordinator(context.Context, *ElectionResult) (*EmptyMessage, error)
+	mustEmbedUnimplementedMutualExclusionServiceServer()
 }
 
-// UnimplementedExampleServiceServer must be embedded to have forward compatible implementations.
-type UnimplementedExampleServiceServer struct {
+// UnimplementedMutualExclusionServiceServer must be embedded to have forward compatible implementations.
+type UnimplementedMutualExclusionServiceServer struct {
 }
 
-func (UnimplementedExampleServiceServer) ExampleMethod(context.Context, *EmptyRequest) (*Response, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ExampleMethod not implemented")
+func (UnimplementedMutualExclusionServiceServer) Election(context.Context, *EmptyMessage) (*ElectionResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Election not implemented")
 }
-func (UnimplementedExampleServiceServer) mustEmbedUnimplementedExampleServiceServer() {}
+func (UnimplementedMutualExclusionServiceServer) SetCoordinator(context.Context, *ElectionResult) (*EmptyMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetCoordinator not implemented")
+}
+func (UnimplementedMutualExclusionServiceServer) mustEmbedUnimplementedMutualExclusionServiceServer() {
+}
 
-// UnsafeExampleServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to ExampleServiceServer will
+// UnsafeMutualExclusionServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to MutualExclusionServiceServer will
 // result in compilation errors.
-type UnsafeExampleServiceServer interface {
-	mustEmbedUnimplementedExampleServiceServer()
+type UnsafeMutualExclusionServiceServer interface {
+	mustEmbedUnimplementedMutualExclusionServiceServer()
 }
 
-func RegisterExampleServiceServer(s grpc.ServiceRegistrar, srv ExampleServiceServer) {
-	s.RegisterService(&ExampleService_ServiceDesc, srv)
+func RegisterMutualExclusionServiceServer(s grpc.ServiceRegistrar, srv MutualExclusionServiceServer) {
+	s.RegisterService(&MutualExclusionService_ServiceDesc, srv)
 }
 
-func _ExampleService_ExampleMethod_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EmptyRequest)
+func _MutualExclusionService_Election_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyMessage)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ExampleServiceServer).ExampleMethod(ctx, in)
+		return srv.(MutualExclusionServiceServer).Election(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/grpcExample.ExampleService/ExampleMethod",
+		FullMethod: "/grpcexample.MutualExclusionService/Election",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExampleServiceServer).ExampleMethod(ctx, req.(*EmptyRequest))
+		return srv.(MutualExclusionServiceServer).Election(ctx, req.(*EmptyMessage))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// ExampleService_ServiceDesc is the grpc.ServiceDesc for ExampleService service.
+func _MutualExclusionService_SetCoordinator_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ElectionResult)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MutualExclusionServiceServer).SetCoordinator(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/grpcexample.MutualExclusionService/SetCoordinator",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MutualExclusionServiceServer).SetCoordinator(ctx, req.(*ElectionResult))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// MutualExclusionService_ServiceDesc is the grpc.ServiceDesc for MutualExclusionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var ExampleService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "grpcExample.ExampleService",
-	HandlerType: (*ExampleServiceServer)(nil),
+var MutualExclusionService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "grpcexample.MutualExclusionService",
+	HandlerType: (*MutualExclusionServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "ExampleMethod",
-			Handler:    _ExampleService_ExampleMethod_Handler,
+			MethodName: "Election",
+			Handler:    _MutualExclusionService_Election_Handler,
+		},
+		{
+			MethodName: "SetCoordinator",
+			Handler:    _MutualExclusionService_SetCoordinator_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

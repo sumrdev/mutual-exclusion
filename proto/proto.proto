@@ -4,14 +4,16 @@ package grpcexample;
 
 option go_package = "grpc/proto";
 
-message Response {
-  string message = 1;
+message ElectionResult {
+  int32 pid = 1;
+  bool coordinator = 2;
 }
 
-message EmptyRequest {
-    
+message EmptyMessage {
+
 }
 
-service ExampleService {
-  rpc ExampleMethod (EmptyRequest) returns (Response);
+service MutualExclusionService {
+  rpc Election (EmptyMessage) returns (ElectionResult);
+  rpc SetCoordinator(ElectionResult) returns (EmptyMessage);
 }
