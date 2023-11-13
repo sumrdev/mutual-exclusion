@@ -192,7 +192,7 @@ func (s *MutualExclusionServiceServer) Election(ctx context.Context, in *proto.E
 	}
 
 	foundCoordinator := newElection()
-	if (foundCoordinator) {
+	if (!foundCoordinator) {
 		// Broadcast to all hosts that I am the coordinator
 		for _, conn := range connections {
 			conn.SetCoordinator(context.Background(), &proto.ElectionResult{Pid: PORT, Coordinator: true})
@@ -204,6 +204,6 @@ func (s *MutualExclusionServiceServer) Election(ctx context.Context, in *proto.E
 
 func (s *MutualExclusionServiceServer) SetCoordinator(ctx context.Context, in *proto.ElectionResult) (*proto.EmptyMessage, error) {
 	coordinator = in
-	log.Printf("New coordinator: %s", coordinator)
+	log.Printf("New coordinator forcefully set by broadcast: %s", coordinator)
 	return &proto.EmptyMessage{}, nil
 }
