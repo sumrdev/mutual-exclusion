@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"io"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"strconv"
@@ -77,14 +78,66 @@ func main() {
 		}
 	}() 
 	for {
-		time.Sleep(10 * time.Second)
-		if (PORT == 8081) {
-			// If not, start new election
-			log.Printf("Starting new election from host: %d", PORT)
-			newElection()
-			fmt.Print("Found coordinator: ", coordinator)
-		}
+		//sleep for random time		
+		
+		time.Sleep(time.Duration(rand.Intn(10)+5) * time.Second)
+		accessCriticalSection()
+
 	}
+}
+
+func accessCriticalSection() {
+	
+	accesRequest := &proto.AccessRequest{
+		Message: "Request access" ,
+	}
+	fin := &proto.AccessRequest{
+		Message: "Finished",
+	}
+	
+	// Check if coordinator is alive
+	if coordinator != nil {
+		for _, host := range hosts {
+			if host.port == coordinator.Port && host.ip == coordinator.Ip {
+				waitc := make(chan struct{})
+				stream, err := connections[host].RequestAccess(context.Background())
+				if err != nil {
+					log.Fatalf("Error when calling RequestAccess: %s", err)
+				}
+				go func() {
+					for {
+					  in, err := stream.Recv()
+					  if err == io.EOF {
+						// read done.
+						close(waitc)
+						return
+					  }
+					  if err != nil {
+						log.Fatalf("Failed to receive a note : %v", err)
+					  }
+					  criticalSection()
+					  stream.Send(fin)
+					  log.Printf("Got message %s", in.Message)
+					}
+				  }()
+				  stream.Send(accesRequest)
+				  stream.CloseSend()
+					<-waitc
+				break
+			}
+		}
+	} else {
+		
+		log.Printf("Starting new election from host: %d", PORT)
+		foundNewCoordinator := newElection()
+		if (!foundNewCoordinator) {
+			setIAmCoordinator()
+		}
+		log.Printf("Coordinator is: %s", coordinator)
+		accessCriticalSection()
+	}
+
+
 }
 func criticalSection() {
 	log.Printf("Doing important work!")
@@ -117,8 +170,8 @@ func sendElectionMessage(host ipAndPort) (error) {
 	ServiceConn := connections[host]
 	ctxTimeout, cancel := context.WithTimeout(context.Background(), time.Second*1)
 	defer cancel()
-	fmt.Print("Sending election message to host: ", connections[host])
-	res, err := ServiceConn.Election(ctxTimeout, &proto.EmptyMessage{})
+	log.Printf("Sending election message to host: %s:%d\n", host.ip,  host.port)
+	_, err := ServiceConn.Election(ctxTimeout, &proto.EmptyMessage{})
 	if err != nil {
 		if strings.Contains(err.Error(), "connection refused")  {
 			log.Printf("Server is down: %s:%s", host.ip, strconv.Itoa(int(host.port)))
@@ -130,11 +183,7 @@ func sendElectionMessage(host ipAndPort) (error) {
 	if ctxTimeout.Err() == context.DeadlineExceeded {
 		return ctxTimeout.Err()
 	}
-	log.Printf("Response from server: %s", res)
-	// Set the new found coordinator
-	if (res.Coordinator) {
-		coordinator = res
-	}
+
 	return nil
 }
 
@@ -142,7 +191,7 @@ func sendElectionMessage(host ipAndPort) (error) {
 func newElection() bool {
 	if (PORT == maxPort) {
 		// I am the coordinator
-		coordinator = &proto.ElectionResult{Pid: PORT, Coordinator: true}
+		setIAmCoordinator()
 		return true
 	}
 	totalConnections := 0
@@ -159,7 +208,7 @@ func newElection() bool {
 			errorCount += 1;
 		}
 	}
-	log.Printf("Total connections: %d, error count: %d", totalConnections, errorCount)
+	log.Printf("Total connections: %d, connections down: %d", totalConnections, errorCount)
 	return totalConnections != errorCount
 }
 
@@ -184,26 +233,33 @@ type MutualExclusionServiceServer struct {
 	proto.UnimplementedMutualExclusionServiceServer
 }
 
-func (s *MutualExclusionServiceServer) Election(ctx context.Context, in *proto.EmptyMessage) (*proto.ElectionResult, error) {
+func (s *MutualExclusionServiceServer) Election(ctx context.Context, in *proto.EmptyMessage) (*proto.EmptyMessage, error) {
 	// If I am the highest port, I am the coordinator
 	if PORT == maxPort { 
 		// Send message to the host that sent the election message that I am the coordinator
-		return &proto.ElectionResult{Pid: PORT, Coordinator: true}, nil
+		setIAmCoordinator()
+		return &proto.EmptyMessage{}, nil
 	}
 
 	foundCoordinator := newElection()
 	if (!foundCoordinator) {
 		// Broadcast to all hosts that I am the coordinator
-		for _, conn := range connections {
-			conn.SetCoordinator(context.Background(), &proto.ElectionResult{Pid: PORT, Coordinator: true})
-		} 
-	}
+		setIAmCoordinator()
+	} 
 	// If not the coordinator just send back OK
-	return &proto.ElectionResult{Pid: PORT, Coordinator: false}, nil
+	return &proto.EmptyMessage{}, nil
 }
 
 func (s *MutualExclusionServiceServer) SetCoordinator(ctx context.Context, in *proto.ElectionResult) (*proto.EmptyMessage, error) {
 	coordinator = in
-	log.Printf("New coordinator forcefully set by broadcast: %s", coordinator)
+	log.Printf("Coordinator set to: %s", coordinator)
 	return &proto.EmptyMessage{}, nil
+}
+
+func setIAmCoordinator (){
+	log.Printf("I am the coordinator!")
+	coordinator = &proto.ElectionResult{Ip: IP, Port: PORT}
+	for _, conn := range connections {
+		conn.SetCoordinator(context.Background(), &proto.ElectionResult{Ip: IP, Port: PORT})
+	} 
 }

@@ -22,8 +22,9 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MutualExclusionServiceClient interface {
-	Election(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*ElectionResult, error)
+	Election(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*EmptyMessage, error)
 	SetCoordinator(ctx context.Context, in *ElectionResult, opts ...grpc.CallOption) (*EmptyMessage, error)
+	RequestAccess(ctx context.Context, opts ...grpc.CallOption) (MutualExclusionService_RequestAccessClient, error)
 }
 
 type mutualExclusionServiceClient struct {
@@ -34,8 +35,8 @@ func NewMutualExclusionServiceClient(cc grpc.ClientConnInterface) MutualExclusio
 	return &mutualExclusionServiceClient{cc}
 }
 
-func (c *mutualExclusionServiceClient) Election(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*ElectionResult, error) {
-	out := new(ElectionResult)
+func (c *mutualExclusionServiceClient) Election(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*EmptyMessage, error) {
+	out := new(EmptyMessage)
 	err := c.cc.Invoke(ctx, "/grpcexample.MutualExclusionService/Election", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -52,12 +53,44 @@ func (c *mutualExclusionServiceClient) SetCoordinator(ctx context.Context, in *E
 	return out, nil
 }
 
+func (c *mutualExclusionServiceClient) RequestAccess(ctx context.Context, opts ...grpc.CallOption) (MutualExclusionService_RequestAccessClient, error) {
+	stream, err := c.cc.NewStream(ctx, &MutualExclusionService_ServiceDesc.Streams[0], "/grpcexample.MutualExclusionService/RequestAccess", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &mutualExclusionServiceRequestAccessClient{stream}
+	return x, nil
+}
+
+type MutualExclusionService_RequestAccessClient interface {
+	Send(*AccessRequest) error
+	Recv() (*AccessRequest, error)
+	grpc.ClientStream
+}
+
+type mutualExclusionServiceRequestAccessClient struct {
+	grpc.ClientStream
+}
+
+func (x *mutualExclusionServiceRequestAccessClient) Send(m *AccessRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *mutualExclusionServiceRequestAccessClient) Recv() (*AccessRequest, error) {
+	m := new(AccessRequest)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // MutualExclusionServiceServer is the server API for MutualExclusionService service.
 // All implementations must embed UnimplementedMutualExclusionServiceServer
 // for forward compatibility
 type MutualExclusionServiceServer interface {
-	Election(context.Context, *EmptyMessage) (*ElectionResult, error)
+	Election(context.Context, *EmptyMessage) (*EmptyMessage, error)
 	SetCoordinator(context.Context, *ElectionResult) (*EmptyMessage, error)
+	RequestAccess(MutualExclusionService_RequestAccessServer) error
 	mustEmbedUnimplementedMutualExclusionServiceServer()
 }
 
@@ -65,11 +98,14 @@ type MutualExclusionServiceServer interface {
 type UnimplementedMutualExclusionServiceServer struct {
 }
 
-func (UnimplementedMutualExclusionServiceServer) Election(context.Context, *EmptyMessage) (*ElectionResult, error) {
+func (UnimplementedMutualExclusionServiceServer) Election(context.Context, *EmptyMessage) (*EmptyMessage, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Election not implemented")
 }
 func (UnimplementedMutualExclusionServiceServer) SetCoordinator(context.Context, *ElectionResult) (*EmptyMessage, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetCoordinator not implemented")
+}
+func (UnimplementedMutualExclusionServiceServer) RequestAccess(MutualExclusionService_RequestAccessServer) error {
+	return status.Errorf(codes.Unimplemented, "method RequestAccess not implemented")
 }
 func (UnimplementedMutualExclusionServiceServer) mustEmbedUnimplementedMutualExclusionServiceServer() {
 }
@@ -121,6 +157,32 @@ func _MutualExclusionService_SetCoordinator_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MutualExclusionService_RequestAccess_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(MutualExclusionServiceServer).RequestAccess(&mutualExclusionServiceRequestAccessServer{stream})
+}
+
+type MutualExclusionService_RequestAccessServer interface {
+	Send(*AccessRequest) error
+	Recv() (*AccessRequest, error)
+	grpc.ServerStream
+}
+
+type mutualExclusionServiceRequestAccessServer struct {
+	grpc.ServerStream
+}
+
+func (x *mutualExclusionServiceRequestAccessServer) Send(m *AccessRequest) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *mutualExclusionServiceRequestAccessServer) Recv() (*AccessRequest, error) {
+	m := new(AccessRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // MutualExclusionService_ServiceDesc is the grpc.ServiceDesc for MutualExclusionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -137,6 +199,13 @@ var MutualExclusionService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _MutualExclusionService_SetCoordinator_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "RequestAccess",
+			Handler:       _MutualExclusionService_RequestAccess_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "proto/proto.proto",
 }

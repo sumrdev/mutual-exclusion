@@ -5,15 +5,20 @@ package grpcexample;
 option go_package = "grpc/proto";
 
 message ElectionResult {
-  int32 pid = 1;
-  bool coordinator = 2;
+  string ip = 1;
+  int32 port = 2;
 }
 
 message EmptyMessage {
 
 }
 
+message AccessRequest{
+  string message = 1;
+}
+
 service MutualExclusionService {
-  rpc Election (EmptyMessage) returns (ElectionResult);
+  rpc Election (EmptyMessage) returns (EmptyMessage);
   rpc SetCoordinator(ElectionResult) returns (EmptyMessage);
+  rpc RequestAccess(stream AccessRequest) returns(stream AccessRequest);
 }
