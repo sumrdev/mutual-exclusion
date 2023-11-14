@@ -23,9 +23,10 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MutualExclusionServiceClient interface {
 	Election(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*EmptyMessage, error)
-	SetCoordinator(ctx context.Context, in *ElectionResult, opts ...grpc.CallOption) (*EmptyMessage, error)
+	SetCoordinator(ctx context.Context, in *ElectionResult, opts ...grpc.CallOption) (*LastCoordinator, error)
 	RequestAccess(ctx context.Context, opts ...grpc.CallOption) (MutualExclusionService_RequestAccessClient, error)
 	HeartBeat(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*EmptyMessage, error)
+	FreeAccessOnNewCoordinator(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*EmptyMessage, error)
 }
 
 type mutualExclusionServiceClient struct {
@@ -45,8 +46,8 @@ func (c *mutualExclusionServiceClient) Election(ctx context.Context, in *EmptyMe
 	return out, nil
 }
 
-func (c *mutualExclusionServiceClient) SetCoordinator(ctx context.Context, in *ElectionResult, opts ...grpc.CallOption) (*EmptyMessage, error) {
-	out := new(EmptyMessage)
+func (c *mutualExclusionServiceClient) SetCoordinator(ctx context.Context, in *ElectionResult, opts ...grpc.CallOption) (*LastCoordinator, error) {
+	out := new(LastCoordinator)
 	err := c.cc.Invoke(ctx, "/grpcexample.MutualExclusionService/SetCoordinator", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -94,14 +95,24 @@ func (c *mutualExclusionServiceClient) HeartBeat(ctx context.Context, in *EmptyM
 	return out, nil
 }
 
+func (c *mutualExclusionServiceClient) FreeAccessOnNewCoordinator(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*EmptyMessage, error) {
+	out := new(EmptyMessage)
+	err := c.cc.Invoke(ctx, "/grpcexample.MutualExclusionService/FreeAccessOnNewCoordinator", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MutualExclusionServiceServer is the server API for MutualExclusionService service.
 // All implementations must embed UnimplementedMutualExclusionServiceServer
 // for forward compatibility
 type MutualExclusionServiceServer interface {
 	Election(context.Context, *EmptyMessage) (*EmptyMessage, error)
-	SetCoordinator(context.Context, *ElectionResult) (*EmptyMessage, error)
+	SetCoordinator(context.Context, *ElectionResult) (*LastCoordinator, error)
 	RequestAccess(MutualExclusionService_RequestAccessServer) error
 	HeartBeat(context.Context, *EmptyMessage) (*EmptyMessage, error)
+	FreeAccessOnNewCoordinator(context.Context, *EmptyMessage) (*EmptyMessage, error)
 	mustEmbedUnimplementedMutualExclusionServiceServer()
 }
 
@@ -112,7 +123,7 @@ type UnimplementedMutualExclusionServiceServer struct {
 func (UnimplementedMutualExclusionServiceServer) Election(context.Context, *EmptyMessage) (*EmptyMessage, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Election not implemented")
 }
-func (UnimplementedMutualExclusionServiceServer) SetCoordinator(context.Context, *ElectionResult) (*EmptyMessage, error) {
+func (UnimplementedMutualExclusionServiceServer) SetCoordinator(context.Context, *ElectionResult) (*LastCoordinator, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetCoordinator not implemented")
 }
 func (UnimplementedMutualExclusionServiceServer) RequestAccess(MutualExclusionService_RequestAccessServer) error {
@@ -120,6 +131,9 @@ func (UnimplementedMutualExclusionServiceServer) RequestAccess(MutualExclusionSe
 }
 func (UnimplementedMutualExclusionServiceServer) HeartBeat(context.Context, *EmptyMessage) (*EmptyMessage, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HeartBeat not implemented")
+}
+func (UnimplementedMutualExclusionServiceServer) FreeAccessOnNewCoordinator(context.Context, *EmptyMessage) (*EmptyMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FreeAccessOnNewCoordinator not implemented")
 }
 func (UnimplementedMutualExclusionServiceServer) mustEmbedUnimplementedMutualExclusionServiceServer() {
 }
@@ -215,6 +229,24 @@ func _MutualExclusionService_HeartBeat_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MutualExclusionService_FreeAccessOnNewCoordinator_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyMessage)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MutualExclusionServiceServer).FreeAccessOnNewCoordinator(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/grpcexample.MutualExclusionService/FreeAccessOnNewCoordinator",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MutualExclusionServiceServer).FreeAccessOnNewCoordinator(ctx, req.(*EmptyMessage))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MutualExclusionService_ServiceDesc is the grpc.ServiceDesc for MutualExclusionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -233,6 +265,10 @@ var MutualExclusionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HeartBeat",
 			Handler:    _MutualExclusionService_HeartBeat_Handler,
+		},
+		{
+			MethodName: "FreeAccessOnNewCoordinator",
+			Handler:    _MutualExclusionService_FreeAccessOnNewCoordinator_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

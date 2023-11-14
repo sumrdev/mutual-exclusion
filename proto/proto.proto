@@ -18,9 +18,14 @@ message AccessRequest{
   int32 id = 2;
 }
 
+message LastCoordinator{
+  int32 id = 1;
+}
+
 service MutualExclusionService {
   rpc Election (EmptyMessage) returns (EmptyMessage);
-  rpc SetCoordinator(ElectionResult) returns (EmptyMessage);
+  rpc SetCoordinator(ElectionResult) returns (LastCoordinator);
   rpc RequestAccess(stream AccessRequest) returns(stream AccessRequest);
   rpc HeartBeat(EmptyMessage) returns(EmptyMessage);
+  rpc FreeAccessOnNewCoordinator(EmptyMessage) returns(EmptyMessage);
 }
