@@ -15,10 +15,12 @@ message EmptyMessage {
 
 message AccessRequest{
   string message = 1;
+  int32 id = 2;
 }
 
 service MutualExclusionService {
   rpc Election (EmptyMessage) returns (EmptyMessage);
   rpc SetCoordinator(ElectionResult) returns (EmptyMessage);
   rpc RequestAccess(stream AccessRequest) returns(stream AccessRequest);
+  rpc HeartBeat(EmptyMessage) returns(EmptyMessage);
 }
