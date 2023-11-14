@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"math/rand"
@@ -24,21 +26,36 @@ type ipAndPort struct{
 var PORT int32;
 var IP string;
 var maxPort int32 = 8083
-var wg sync.WaitGroup
-var hosts = []ipAndPort{
-	{"localhost", 8080},
-	{"localhost", 8081},
-	{"localhost", 8082},
-	{"localhost", 8083},
-}
+var hosts = []ipAndPort{}
 
 var connections = map[ipAndPort]proto.MutualExclusionServiceClient{}
 var coordinator *ipAndPort
+var logger *log.Logger
+func readHostsFromFile(file *os.File) (error) {
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		split := strings.Split(line, ":")
+		if len(split) != 2 {
+			return fmt.Errorf("error when reading file")
+		}
+		port, err := strconv.Atoi(split[1])
+		if err != nil {
+			return err
+		}
+		hosts = append(hosts, ipAndPort{split[0], int32(port)})
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
 
 func main() {
 
-	if len(os.Args) != 3 {
-		log.Fatalf("Usage: %s IP PORT", os.Args[0])
+	if len(os.Args) != 4 {
+		log.Fatalf("Usage: %s IP PORT FILE", os.Args[0])
 	}
 	
 	IP = os.Args[1]
@@ -47,15 +64,37 @@ func main() {
 		log.Fatalf("PORT must be an integer: %s", err)
 	}
 	PORT = int32(port)
-	go runServer(PORT)
 
+	f, err := os.OpenFile("logfile", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("error opening file: %v", err)
+	}
+
+	// Make a log file
+	logger = log.New(os.Stdout, "Port: "+strconv.Itoa(int(PORT)) + " ", log.LstdFlags)
+	logger.SetOutput(f)
+	
+	defer f.Close()
+
+	// Open supplied file
+	file, err := os.Open(os.Args[3])
+	if err != nil {
+		logger.Fatalf("Error when opening file: %s", err)
+	}
+	
+	// Read hosts from file
+	readHostsFromFile(file)
+	file.Close()
+	
+	logger.Printf("Hosts: %v", hosts)
+
+	go runServer(PORT)
 
 	// Connect to all hosts
 	go connectToHostsContinuously()
 	
 	for {
-		//sleep for random time		
-		
+		//Sleep for random time			
 		time.Sleep(time.Duration(rand.Intn(10)+5) * time.Second)
 		accessCriticalSection()
 
@@ -66,7 +105,7 @@ func connectToHostsContinuously() {
 	for {
 		notConnectedHosts := []ipAndPort{}
 
-		//subtract the hosts that are already connected
+		// Subtract the hosts that are already connected
 		for _, host := range hosts{
 			val, ok := connections[host]
 			if !ok || val == nil {
@@ -74,21 +113,27 @@ func connectToHostsContinuously() {
 			}
 		}
 		for _, host := range notConnectedHosts{
-			// Run through all hosts and skip if already connected
+			// Run through all hosts except myself
 			if host.port == int32(PORT) && host.ip == IP { 
 				continue
 			}
-			log.Printf("Connecting to host: %s %d", host.ip, host.port)
+			logger.Printf("Connecting to host: %s %d", host.ip, host.port)
 			connectToHost(host)
 		}
-		// Check if coordinator is still alive
-
 		time.Sleep(2 * time.Second)
 	}
 }
 
+func accessAsCoordinator() {
+	logger.Printf("Trying to access critical section as coordinator")
+	mu.Lock()
+	logger.Printf("Accessing critical section, as coordinator")
+	criticalSection()
+	logger.Printf("Exiting critical section, as coordinator")
+	mu.Unlock()
+}
+
 func accessCriticalSection() {
-	
 	accesRequest := &proto.AccessRequest{
 		Message: "Request access",
 		Id: PORT,
@@ -100,33 +145,30 @@ func accessCriticalSection() {
 	if coordinator == nil {
 		newElection()
 	}
-	//coordinator disconnected
-
-	
-
-	
 	if coordinator.port == PORT && coordinator.ip == IP {
-		mu.Lock()
-		log.Printf("Accessing critical section, as coordinator")
-		criticalSection()
-		log.Printf("Exiting critical section, as coordinator")
-		mu.Unlock()
+		accessAsCoordinator()
 		return
 	}
 	
-
 	// Check if coordinator is alive
 	timeout := 5 * time.Second
-	timeoutContext, _ := context.WithTimeout(context.Background(), timeout)
+	timeoutContext, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	_, err := connections[*coordinator].HeartBeat(timeoutContext, &proto.EmptyMessage{})
 	if err != nil {
-		log.Printf("Coordinator is down, calling election")
+		logger.Printf("Coordinator is down, calling election")
 		newElection()
 	}
+	// If i have become the coordinator
+	if coordinator.port == PORT && coordinator.ip == IP {
+		accessAsCoordinator()
+		return
+	}
+
 	waitc := make(chan struct{})
 	stream, err := connections[*coordinator].RequestAccess(context.Background())
 	if err != nil {
-		log.Printf("Error when calling RequestAccess: %s", err)
+		logger.Printf("Error when calling RequestAccess: %s", err)
 		return
 	}
 	go func() {
@@ -134,15 +176,17 @@ func accessCriticalSection() {
 			in, err := stream.Recv()
 			if err == io.EOF {
 				// read done.
-				log.Printf("SERVER MADE EOF TRUE")
 				close(waitc)
 				return
 			}
 			if err != nil {
-				log.Printf("Failed to receive a note : %v", err)
+				logger.Printf("Failed to receive a mesage : %v", err)
+				if _, ok := <-waitc; ok {
+					close(waitc)
+				}
 				return
 			}
-			log.Printf("Got message: %s", in.Message)
+			logger.Printf("Got message: %s", in.Message)
 			if in.Message == "yes" {
 				criticalSection()
 				stream.Send(fin)
@@ -152,7 +196,6 @@ func accessCriticalSection() {
 			}
 			if in.Message == "close"{
 				stream.CloseSend()
-
 				return
 			}
 		}
@@ -162,9 +205,9 @@ func accessCriticalSection() {
 }
 
 func criticalSection() {
-	log.Printf("Accessing critical section...")
+	logger.Printf("Accessing critical section...")
 	time.Sleep(5 * time.Second)
-	log.Printf("Exiting critical section...")
+	logger.Printf("Exiting critical section...")
 }
 
 func connectToHost(host ipAndPort) {
@@ -172,17 +215,17 @@ func connectToHost(host ipAndPort) {
 
 	conn, err := grpc.DialContext(ctx, host.ip+":"+strconv.Itoa(int(host.port)), grpc.WithBlock(),  grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Printf("could not connect: %v", err)
+		logger.Printf("could not connect: %v", err)
 		return
 	}
 	if conn == nil {
-		log.Printf("Connection is nil")
+		logger.Printf("Connection is nil")
 		return
 	}
-	log.Printf("Connection State: %s", conn.GetState().String())
+	logger.Printf("Connection State: %s", conn.GetState().String())
 	ServiceConn := proto.NewMutualExclusionServiceClient(conn)
 	if connections[host] != nil {
-		log.Printf("Connection already exists")
+		logger.Printf("Connection already exists")
 		return
 	}
 	connections[host] = ServiceConn
@@ -192,13 +235,13 @@ func sendElectionMessage(host ipAndPort) (error) {
 	ServiceConn := connections[host]
 	ctxTimeout, cancel := context.WithTimeout(context.Background(), time.Second*1)
 	defer cancel()
-	log.Printf("Sending election message to host: %s:%d\n", host.ip,  host.port)
+	logger.Printf("Sending election message to host: %s:%d\n", host.ip,  host.port)
 	_, err := ServiceConn.Election(ctxTimeout, &proto.EmptyMessage{})
 	if err != nil {
 		if strings.Contains(err.Error(), "connection refused")  {
-			log.Printf("Server is down: %s:%s", host.ip, strconv.Itoa(int(host.port)))
+			logger.Printf("Server is down: %s:%s", host.ip, strconv.Itoa(int(host.port)))
 		} else {
-			log.Printf("Error when calling MutualExclusionMethod: %s", err)
+			logger.Printf("Error when calling MutualExclusionMethod: %s", err)
 		}
 		return err
 	}
@@ -224,22 +267,18 @@ func newElection() {
 			continue
 		}
 		totalConnections += 1
-		log.Printf("Sending election message to host: %s %d", host.ip, host.port)
 		err := sendElectionMessage(host)
 		if (err != nil) {
 			errorCount += 1;
 		}
 	}
-	log.Printf("Total connections: %d, connections down: %d", totalConnections, errorCount)
+	logger.Printf("Total connections above: %d, connections above down: %d", totalConnections, errorCount)
 	if totalConnections == errorCount {
 		setIAmCoordinator()
 	}
 
 }
 
-
-
-/////////////// SERVER
 func runServer(port int32) {
 
 	grpcServer := grpc.NewServer()
@@ -278,35 +317,35 @@ func electionResultToHost(in *proto.ElectionResult) *ipAndPort {
 
 func (s *MutualExclusionServiceServer) SetCoordinator(ctx context.Context, in *proto.ElectionResult) (*proto.EmptyMessage, error) {
 	coordinator = electionResultToHost(in)
-	log.Printf("Coordinator set to: %s", *&coordinator.port)
+	logger.Printf("Coordinator set to: %d", coordinator.port)
 	return &proto.EmptyMessage{}, nil
 }
 
-// Lock only used by coordinator to allow a single client to access critical section
+// Lock used by coordinator to allow a single client to access critical section
 var mu sync.Mutex
 
 func (s *MutualExclusionServiceServer) RequestAccess(stream proto.MutualExclusionService_RequestAccessServer) error {
 	for {
 		in, err := stream.Recv()
 		if err == io.EOF {
-		  
-		  return nil
+		  	return nil
 		}
 		if err != nil {
-		  return err
+			mu.Unlock()
+		  	return err
 		}
 		if in.Message == "Request access" {
 			//lock the crital section
-			log.Printf("Got request to access critical section from port: %d", in.Id )
+			logger.Printf("Got request to access critical section from port: %d", in.Id )
 			mu.Lock()
 			if err := stream.Send(&proto.AccessRequest{
-				Message: "Access granted, now wait",
+				Message: "yes",
 				Id: PORT,
 			}); err != nil {
 				return err
 			}
 		} else if in.Message == "done" {
-			log.Printf("Port %d is done accessing the critical section", in.Id )
+			logger.Printf("Port %d is done accessing the critical section", in.Id )
 			mu.Unlock()
 			//free the crital section
 			if err := stream.Send(&proto.AccessRequest{
@@ -324,7 +363,7 @@ func (s *MutualExclusionServiceServer) HeartBeat(ctx context.Context, in *proto.
 }
 
 func setIAmCoordinator (){
-	log.Printf("I am the coordinator!")
+	logger.Printf("I am the coordinator!")
 	coordinator = &ipAndPort{ip: IP, port: PORT}
 	for _, conn := range connections {
 		conn.SetCoordinator(context.Background(), &proto.ElectionResult{Ip: IP, Port: PORT})
